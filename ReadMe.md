@@ -12,7 +12,7 @@ In these project we have a few files:
 Also I provide you with the models I already trained you can find them in my google disk folder (https://drive.google.com/drive/folders/1J_SlnzurrwiB9O-6pRQ-kuU_BoH9mNq1?usp=sharing). There are:
 - best_model_classification.h5 - my best classification model
 - best_model_segment_resnet.h5 - the resnet model
-- best_model_segment_efficientnet.h5 - me best efficient net model
+- best_model_segment_efficientnet.h5 - my best efficient net model
 
 Before running the code please run in CLI:
 
