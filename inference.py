@@ -2,15 +2,14 @@ import pandas as pd
 import os
 
 from segmentation_train import preprocess_input
-from utils import dice_score, rle_to_mask
-
-os.environ["SM_FRAMEWORK"] = "tf.keras"
-
-
+from utils import calculate_iou_score, rle_to_mask, calculate_dice_score, predict_on_tiles, reconstruct_from_tiles, crop_image
 import cv2
-from tensorflow.keras.models import load_model
 import numpy as np
 from sklearn.metrics import jaccard_score
+
+os.environ["SM_FRAMEWORK"] = "tf.keras"
+from tensorflow.keras.models import load_model
+
 
 # Load the CSV file into a DataFrame
 df = pd.read_csv('path_to_file')
@@ -23,7 +22,7 @@ model = load_model('path_to_model', compile=False)
 # Get a list of unique image IDs
 image_ids = grouped.index.tolist()
 # Calculate the 90% mark
-split_index = int(len(image_ids) * 0.90)
+split_index = int(len(image_ids) * 0.995)
 # Get the test image IDs
 test_image_ids = image_ids[split_index:]
 
@@ -35,45 +34,40 @@ image_dir = "path_to_images"
 true_masks = []
 pred_masks = []
 
-
-
-
-# Iterate over the test image IDs
 for image_id in test_image_ids:
     # Load the image
     image = cv2.imread(os.path.join(image_dir, image_id))
 
-    # Preprocess the image
-    image = cv2.resize(image, (256, 256))  # resize to match the model's expected input size
-    image = preprocess_input(image)
+    # Create tiles
+    tiles = crop_image(image)
 
-    # Reshape the image
-    image = np.expand_dims(image, axis=0)
+    # Predict on tiles
+    tile_masks = predict_on_tiles(tiles, classification_model, segmentation_model)
 
-    # Make the prediction
-    prediction = model.predict(image, verbose=0)[0]
+    # Reconstruct the full mask from the tiles
+    full_mask = reconstruct_from_tiles(tile_masks, image.shape, tile_size=256, stride=256)
 
     # Add the predicted mask to the list
-    pred_masks.append(prediction)
+    pred_masks.append(full_mask)
 
     # Get the true mask for this image
     rle_encoded_mask = grouped.loc[image_id]
 
     # Decode the RLE-encoded mask
     true_mask = rle_to_mask(rle_encoded_mask, (768, 768))  # replace with your function to decode the mask
-    true_mask = cv2.resize(true_mask, (256, 256))
 
     # Add the true mask to the list
     true_masks.append(true_mask)
 
-# convert to a binary mask
 binary_pred_masks = np.where(np.concatenate(pred_masks) > 0.5, 1, 0)
 
+# Convert binary_pred_masks to single-channel
+binary_pred_masks = np.max(binary_pred_masks, axis=-1)
 
-iou_score = jaccard_score(np.concatenate(true_masks).ravel(), binary_pred_masks.ravel())
+
+# Calculate the IOU and Dice scores
+iou_score = calculate_iou_score(true_masks, binary_pred_masks)
+dice_score = calculate_dice_score(np.concatenate(true_masks), binary_pred_masks.ravel())
 
 print(f"IOU Score: {iou_score}")
-
-dice = dice_score(np.concatenate(true_masks),  binary_pred_masks.ravel())
-
-print(f"Dice Score: {dice}")
+print(f"Dice Score: {dice_score}")
